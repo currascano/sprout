@@ -1,0 +1,12 @@
+{
+  "name": "sprout-docs",
+  "private": true,
+  "scripts": {
+    "start": "npx vitepress dev",
+    "build": "npx vitepress build",
+    "preview": "npx vitepress preview"
+  },
+  "devDependencies": {
+    "vitepress": "^1.3.0"
+  }
+}

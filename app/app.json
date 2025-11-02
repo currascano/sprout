@@ -1,0 +1,16 @@
+{
+  "expo": {
+    "name": "SPROUT",
+    "slug": "sprout",
+    "scheme": "sprout",
+    "web": {
+      "bundler": "metro"
+    },
+    "icon": "assets/icon.png",
+    "splash": {
+      "image": "assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0b1220"
+    }
+  }
+}

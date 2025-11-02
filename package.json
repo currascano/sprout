@@ -1,0 +1,26 @@
+{
+  "name": "sprout",
+  "private": true,
+  "workspaces": [
+    "app",
+    "api",
+    "packages/*",
+    "docs"
+  ],
+  "scripts": {
+    "bootstrap": "npm run -w app i && npm i -w api && npm i -w packages/ui && npm i -w docs",
+    "web": "npm run -w app web",
+    "start": "npm run -w app start",
+    "ios": "npm run -w app ios",
+    "android": "npm run -w app android",
+    "lint": "eslint . || true",
+    "typecheck": "tsc -b || true",
+    "build:api": "npm run -w api build",
+    "dev:api": "npm run -w api start:dev",
+    "docs": "npm run -w docs start"
+  },
+  "devDependencies": {
+    "eslint": "^9.11.0",
+    "typescript": "^5.4.0"
+  }
+}
