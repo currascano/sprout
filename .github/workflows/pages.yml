@@ -20,8 +20,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: 'npm'
+          node-version: 20
+          cache: npm
           cache-dependency-path: |
             package-lock.json
             app/package-lock.json
@@ -30,23 +30,20 @@ jobs:
         run: npm ci
 
       - name: Install app deps
-        working-directory: ./app
+        working-directory: app
         run: npm ci
 
       - name: Expo export (static web)
         env:
           EXPO_NO_TELEMETRY: 1
-          CI: false
-        working-directory: ./app
+        working-directory: app
         run: |
-          npx expo export --platform web \
-            --public-url https://currascano.github.io/sprout/ \
-            --clear --dump-sourcemap
+          npx expo export --platform web --output-dir dist --clear --dump-sourcemap
 
       - name: Upload artifact (dist)
         uses: actions/upload-pages-artifact@v3
         with:
-          path: ./app/dist
+          path: app/dist
 
   deploy:
     needs: build
