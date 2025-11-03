@@ -2,8 +2,7 @@ name: Deploy Expo Web to GitHub Pages
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 permissions:
   contents: read
@@ -15,30 +14,36 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 18
+          cache: 'npm'
+          cache-dependency-path: |
+            package-lock.json
+            app/package-lock.json
 
-      # Install root dependencies (monorepo compatible)
       - name: Install root deps
-        run: npm install
+        run: npm ci
 
-      # Install app dependencies
       - name: Install app deps
         working-directory: ./app
-        run: npm install
+        run: npm ci
 
-      # Build the Expo Web project
       - name: Expo export (static web)
+        env:
+          EXPO_NO_TELEMETRY: 1
+          CI: false
         working-directory: ./app
-        run: npx expo export --platform web --public-url https://currascano.github.io/sprout/
+        run: |
+          npx expo export --platform web \
+            --public-url https://currascano.github.io/sprout/ \
+            --clear --dump-sourcemap
 
-      # Upload the exported site
-      - name: Upload build
+      - name: Upload artifact (dist)
         uses: actions/upload-pages-artifact@v3
         with:
           path: ./app/dist
@@ -49,8 +54,6 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-
     steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
+      - id: deployment
         uses: actions/deploy-pages@v4
