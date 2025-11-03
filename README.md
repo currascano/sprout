@@ -43,3 +43,4 @@ Then ensure iOS `Info.plist` includes:
 - iOS/Android uses **react-native-voice**. Add permissions in Info.plist/Android Manifest.
 - The toggle lives in the demo screen and can be disabled anytime.
 - Wake phrases: “hey mia”, “ok mia”. Edit in `app/src/mia/wakeword.ts`.
+
