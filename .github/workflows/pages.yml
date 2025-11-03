@@ -25,66 +25,79 @@ jobs:
         working-directory: app
         run: npm ci
 
-      - name: Build Expo web (static export)
+      - name: Build Expo web (static export, relative urls)
         working-directory: app
         run: |
           rm -rf dist
-          npx expo export --platform web --output-dir dist
+          npx expo export --platform web --output-dir dist --public-url ./
 
-      - name: Patch HTML for /sprout subpath and correct index-*.js path
+      - name: Patch HTML for /sprout and cache-bust index bundle
         working-directory: app
+        env:
+          GITHUB_SHA: ${{ github.sha }}
         run: |
           node - <<'NODE'
           const fs = require('fs');
           const path = require('path');
-
           const DIST = 'dist';
-          const HTMLS = ['index.html', '404.html'].map(f => path.join(DIST, f)).filter(fp => fs.existsSync(fp));
-          const WEB_DIR = path.join(DIST, '_expo', 'static', 'js', 'web');
+          const HTMLS = ['index.html','404.html']
+            .map(f=>path.join(DIST,f)).filter(fp=>fs.existsSync(fp));
 
-          // Find the real hashed index-*.js that Expo built
+          // remove any service worker to avoid stale caches
+          for (const f of ['sw.js','register-service-worker.js']) {
+            const p = path.join(DIST, f);
+            if (fs.existsSync(p)) fs.rmSync(p, {force:true});
+          }
+
+          // find real hashed index-*.js under _expo/static/js/web
+          const WEB_DIR = path.join(DIST,'_expo','static','js','web');
           let hashedIndex = null;
           if (fs.existsSync(WEB_DIR)) {
-            const files = fs.readdirSync(WEB_DIR)
-              .filter(f => /^index-.*\.js$/.test(f))
-              .sort(); // in case there are multiple, last wins
-            if (files.length) hashedIndex = files[files.length - 1];
+            const files = fs.readdirSync(WEB_DIR).filter(f=>/^index-.*\.js$/.test(f)).sort();
+            if (files.length) hashedIndex = files[files.length-1];
           }
 
           for (const fp of HTMLS) {
-            let html = fs.readFileSync(fp, 'utf8');
+            let html = fs.readFileSync(fp,'utf8');
 
-            // Ensure base href=/sprout/ (helps relative assets)
-            if (!/\<base\s+href=/.test(html)) {
+            // nuke service worker references
+            html = html.replace(/<script[^>]*register-service-worker[^>]*><\/script>/g, '');
+            html = html.replace(/<link[^>]*rel=["']manifest["'][^>]*>/g, '');
+
+            // inject no-cache meta
+            if (!/Cache-Control/.test(html)) {
+              html = html.replace('<head>', `<head>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />`);
+            }
+
+            // ensure base for subpath
+            if (!/<base\s+href=/.test(html)) {
               html = html.replace('<head>', '<head>\n  <base href="/sprout/">');
             }
 
-            // Fix any absolute paths that miss the /sprout prefix
+            // fix any absolute paths missing /sprout
             html = html.replace(/"\/*_expo\//g, '"/sprout/_expo/');
             html = html.replace(/href="\/favicon\.ico"/g, 'href="/sprout/favicon.ico"');
             html = html.replace(/href="\/assets\//g, 'href="/sprout/assets/');
 
-            // If the HTML references index-*.js directly (root), rewrite to /sprout/_expo/static/js/web/<hash>
+            // rewrite any root index-*.js to the real hashed file with cache-buster
             if (hashedIndex) {
-              // src="/index-<hash>.js"  OR  src="index-<hash>.js"  OR any variant
-              html = html.replace(/src="\/?index-[^"]+\.js"/g, `src="/sprout/_expo/static/js/web/${hashedIndex}"`);
-              // preload link: <link rel="modulepreload" href="/index-<hash>.js">
-              html = html.replace(/href="\/?index-[^"]+\.js"/g, `href="/sprout/_expo/static/js/web/${hashedIndex}"`);
+              const bust = process.env.GITHUB_SHA || Date.now().toString();
+              const target = `/sprout/_expo/static/js/web/${hashedIndex}?v=${bust}`;
+              html = html.replace(/src="\/?index-[^"]+\.js"/g, `src="${target}"`);
+              html = html.replace(/href="\/?index-[^"]+\.js"/g, `href="${target}"`);
             }
 
             fs.writeFileSync(fp, html, 'utf8');
             console.log('Patched', fp);
           }
 
-          // Ensure favicon exists where the HTML points
-          const favSrcPng = path.join(DIST, 'assets', 'icon.png'); // from Expo config
-          const favDstIco = path.join(DIST, 'favicon.ico');
-          if (!fs.existsSync(favDstIco)) {
-            // If you have a real .ico, copy it instead; otherwise duplicate the png to prevent 404
-            try {
-              if (fs.existsSync(favSrcPng)) fs.copyFileSync(favSrcPng, favDstIco);
-            } catch (e) { /* ignore */ }
-          }
+          // ensure favicon exists
+          const ico = path.join(DIST,'favicon.ico');
+          const png = path.join(DIST,'assets','icon.png');
+          if (!fs.existsSync(ico) && fs.existsSync(png)) fs.copyFileSync(png, ico);
           NODE
 
       - name: Upload Pages artifact
