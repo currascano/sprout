@@ -8,7 +8,7 @@
     "docs"
   ],
   "scripts": {
-    "bootstrap": "npm run -w app i && npm i -w api && npm i -w packages/ui && npm i -w docs",
+    "bootstrap": "npm install -w packages/ui && npm install -w app && npm install -w api && npm install -w docs",
     "web": "npm run -w app web",
     "start": "npm run -w app start",
     "ios": "npm run -w app ios",

@@ -1,0 +1,16 @@
+# OS / IDE
+.DS_Store
+Thumbs.db
+
+# Expo cache
+app/.expo/
+app/.expo-shared/
+
+# Build + deps
+**/node_modules/
+**/dist/
+**/build/
+**/.cache/
+
+# Windows reserved
+NUL
