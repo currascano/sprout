@@ -1,29 +1,45 @@
-name: pages
+name: Deploy Expo Web to GitHub Pages
 
 on:
   push:
     branches: [ main ]
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
           cache: npm
-      - name: Install
-        run: npm i
-      - name: Export Expo web
+
+      - name: Install deps (app)
         working-directory: app
-        run: npx expo export --platform web --output-dir dist
-      - name: Publish to gh-pages
-        uses: peaceiris/actions-gh-pages@v3
+        run: npm install
+
+      - name: Build Expo Web
+        working-directory: app
+        run: npx expo export --platform web
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./app/dist
-          force_orphan: true
+          path: app/dist
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
