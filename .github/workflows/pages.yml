@@ -1,14 +1,18 @@
-name: pages
+name: Deploy Expo Web to GitHub Pages
+
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
 
     steps:
       - name: Checkout repo
@@ -17,86 +21,36 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 18
 
-      - name: Install root dependencies
-        run: npm ci
+      # Install root dependencies (monorepo compatible)
+      - name: Install root deps
+        run: npm install
 
-      - name: Install app dependencies
-        working-directory: app
-        run: npm ci
+      # Install app dependencies
+      - name: Install app deps
+        working-directory: ./app
+        run: npm install
 
-      - name: Build Expo Web
-        working-directory: app
-        run: |
-          rm -rf dist
-          npx expo export --platform web --output-dir dist --public-url ./
+      # Build the Expo Web project
+      - name: Expo export (static web)
+        working-directory: ./app
+        run: npx expo export --platform web --public-url https://currascano.github.io/sprout/
 
-      - name: Fix bundle paths + cache-bust + remove SW
-        working-directory: app
-        env:
-          GITHUB_SHA: ${{ github.sha }}
-        run: |
-          node << 'NODE'
-          const fs = require('fs');
-          const path = require('path');
-
-          const dist = 'dist';
-
-          // Remove service worker files if they exist
-          ['sw.js','register-service-worker.js','service-worker.js'].forEach(f => {
-            const p = path.join(dist, f);
-            if (fs.existsSync(p)) fs.rmSync(p, { force: true });
-          });
-
-          // Find hashed index file
-          const webDir = path.join(dist, '_expo/static/js/web');
-          let hashed = null;
-          if (fs.existsSync(webDir)) {
-            const files = fs.readdirSync(webDir)
-              .filter(f => /^index-.*\.js$/.test(f))
-              .sort();
-            hashed = files.pop();
-          }
-
-          const htmlFiles = ['index.html', '404.html'];
-
-          for (const file of htmlFiles) {
-            const fp = path.join(dist, file);
-            if (!fs.existsSync(fp)) continue;
-
-            let html = fs.readFileSync(fp, 'utf8');
-
-            // Base tag for GH Pages subpath
-            if (!html.includes('<base href="/sprout/">')) {
-              html = html.replace('<head>', `<head><base href="/sprout/">`);
-            }
-
-            // Cache bust meta
-            html = html.replace('<head>', `<head>
-<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-<meta http-equiv="Pragma" content="no-cache" />
-<meta http-equiv="Expires" content="0" />`);
-
-            // Rewrite _expo paths
-            html = html.replace(/"\/_expo\//g, '"/sprout/_expo/');
-
-            // Point to the hashed bundle and add cache-busting
-            if (hashed) {
-              const newPath = `/sprout/_expo/static/js/web/${hashed}?v=${process.env.GITHUB_SHA}`;
-              html = html.replace(/src="[^"]*index-.*\.js[^"]*"/, `src="${newPath}"`);
-            }
-
-            fs.writeFileSync(fp, html, 'utf8');
-            console.log(`Patched: ${file}`);
-          }
-          NODE
-
-      - name: Upload static artifact
+      # Upload the exported site
+      - name: Upload build
         uses: actions/upload-pages-artifact@v3
         with:
-          path: app/dist
+          path: ./app/dist
 
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
+    steps:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
