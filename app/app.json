@@ -2,8 +2,9 @@
   "expo": {
     "name": "SPROUT",
     "slug": "sprout",
-    "icon": "assets/icon.png",
-    "splash": { "image": "assets/splash.png", "resizeMode": "contain", "backgroundColor": "#0b1220" },
-    "transpilePackages": ["@sprout/ui"]
+    "web": {
+      "output": "export",
+      "favicon": "./assets/icon.png"
+    }
   }
 }

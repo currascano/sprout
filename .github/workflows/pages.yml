@@ -1,41 +1,43 @@
-name: Deploy Expo Web to GitHub Pages
-
+name: pages
 on:
   push:
     branches: [ main ]
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: true
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18
-          cache: npm
+          node-version: 20
 
-      - name: Install deps (app)
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install app deps
         working-directory: app
-        run: npm install
+        run: npm ci
 
-      - name: Build Expo Web
+      - name: Build Expo web (static export)
         working-directory: app
-        run: npx expo export --platform web
+        run: |
+          rm -rf dist
+          npx expo export --platform web --output-dir dist
 
-      - name: Upload artifact
+      # Patch absolute "/_expo/..." → "/sprout/_expo/..." for subfolder hosting
+      - name: Patch asset paths for subfolder hosting
+        working-directory: app
+        run: |
+          node -e "const fs=require('fs'),p='dist';for (const f of ['index.html','404.html']) {const fp=`${p}/${f}`; if (fs.existsSync(fp)) {let s=fs.readFileSync(fp,'utf8'); s=s.replace(/\"\/_expo\//g,'\"/sprout/_expo/'); s=s.replace(/href=\"\/favicon\.ico\"/g,'href=\"/sprout/favicon.ico\"'); fs.writeFileSync(fp,s)}}"
+
+      - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: app/dist
