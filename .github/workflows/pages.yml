@@ -31,11 +31,61 @@ jobs:
           rm -rf dist
           npx expo export --platform web --output-dir dist
 
-      # Patch absolute "/_expo/..." → "/sprout/_expo/..." for subfolder hosting
-      - name: Patch asset paths for subfolder hosting
+      - name: Patch HTML for /sprout subpath and correct index-*.js path
         working-directory: app
         run: |
-          node -e "const fs=require('fs'),p='dist';for (const f of ['index.html','404.html']) {const fp=`${p}/${f}`; if (fs.existsSync(fp)) {let s=fs.readFileSync(fp,'utf8'); s=s.replace(/\"\/_expo\//g,'\"/sprout/_expo/'); s=s.replace(/href=\"\/favicon\.ico\"/g,'href=\"/sprout/favicon.ico\"'); fs.writeFileSync(fp,s)}}"
+          node - <<'NODE'
+          const fs = require('fs');
+          const path = require('path');
+
+          const DIST = 'dist';
+          const HTMLS = ['index.html', '404.html'].map(f => path.join(DIST, f)).filter(fp => fs.existsSync(fp));
+          const WEB_DIR = path.join(DIST, '_expo', 'static', 'js', 'web');
+
+          // Find the real hashed index-*.js that Expo built
+          let hashedIndex = null;
+          if (fs.existsSync(WEB_DIR)) {
+            const files = fs.readdirSync(WEB_DIR)
+              .filter(f => /^index-.*\.js$/.test(f))
+              .sort(); // in case there are multiple, last wins
+            if (files.length) hashedIndex = files[files.length - 1];
+          }
+
+          for (const fp of HTMLS) {
+            let html = fs.readFileSync(fp, 'utf8');
+
+            // Ensure base href=/sprout/ (helps relative assets)
+            if (!/\<base\s+href=/.test(html)) {
+              html = html.replace('<head>', '<head>\n  <base href="/sprout/">');
+            }
+
+            // Fix any absolute paths that miss the /sprout prefix
+            html = html.replace(/"\/*_expo\//g, '"/sprout/_expo/');
+            html = html.replace(/href="\/favicon\.ico"/g, 'href="/sprout/favicon.ico"');
+            html = html.replace(/href="\/assets\//g, 'href="/sprout/assets/');
+
+            // If the HTML references index-*.js directly (root), rewrite to /sprout/_expo/static/js/web/<hash>
+            if (hashedIndex) {
+              // src="/index-<hash>.js"  OR  src="index-<hash>.js"  OR any variant
+              html = html.replace(/src="\/?index-[^"]+\.js"/g, `src="/sprout/_expo/static/js/web/${hashedIndex}"`);
+              // preload link: <link rel="modulepreload" href="/index-<hash>.js">
+              html = html.replace(/href="\/?index-[^"]+\.js"/g, `href="/sprout/_expo/static/js/web/${hashedIndex}"`);
+            }
+
+            fs.writeFileSync(fp, html, 'utf8');
+            console.log('Patched', fp);
+          }
+
+          // Ensure favicon exists where the HTML points
+          const favSrcPng = path.join(DIST, 'assets', 'icon.png'); // from Expo config
+          const favDstIco = path.join(DIST, 'favicon.ico');
+          if (!fs.existsSync(favDstIco)) {
+            // If you have a real .ico, copy it instead; otherwise duplicate the png to prevent 404
+            try {
+              if (fs.existsSync(favSrcPng)) fs.copyFileSync(favSrcPng, favDstIco);
+            } catch (e) { /* ignore */ }
+          }
+          NODE
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
