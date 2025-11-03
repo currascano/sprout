@@ -11,96 +11,88 @@ jobs:
       id-token: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      - name: Install root deps
+      - name: Install root dependencies
         run: npm ci
 
-      - name: Install app deps
+      - name: Install app dependencies
         working-directory: app
         run: npm ci
 
-      - name: Build Expo web (static export, relative urls)
+      - name: Build Expo Web
         working-directory: app
         run: |
           rm -rf dist
           npx expo export --platform web --output-dir dist --public-url ./
 
-      - name: Patch HTML for /sprout and cache-bust index bundle
+      - name: Fix bundle paths + cache-bust + remove SW
         working-directory: app
         env:
           GITHUB_SHA: ${{ github.sha }}
         run: |
-          node - <<'NODE'
+          node << 'NODE'
           const fs = require('fs');
           const path = require('path');
-          const DIST = 'dist';
-          const HTMLS = ['index.html','404.html']
-            .map(f=>path.join(DIST,f)).filter(fp=>fs.existsSync(fp));
 
-          // remove any service worker to avoid stale caches
-          for (const f of ['sw.js','register-service-worker.js']) {
-            const p = path.join(DIST, f);
-            if (fs.existsSync(p)) fs.rmSync(p, {force:true});
+          const dist = 'dist';
+
+          // Remove service worker files if they exist
+          ['sw.js','register-service-worker.js','service-worker.js'].forEach(f => {
+            const p = path.join(dist, f);
+            if (fs.existsSync(p)) fs.rmSync(p, { force: true });
+          });
+
+          // Find hashed index file
+          const webDir = path.join(dist, '_expo/static/js/web');
+          let hashed = null;
+          if (fs.existsSync(webDir)) {
+            const files = fs.readdirSync(webDir)
+              .filter(f => /^index-.*\.js$/.test(f))
+              .sort();
+            hashed = files.pop();
           }
 
-          // find real hashed index-*.js under _expo/static/js/web
-          const WEB_DIR = path.join(DIST,'_expo','static','js','web');
-          let hashedIndex = null;
-          if (fs.existsSync(WEB_DIR)) {
-            const files = fs.readdirSync(WEB_DIR).filter(f=>/^index-.*\.js$/.test(f)).sort();
-            if (files.length) hashedIndex = files[files.length-1];
-          }
+          const htmlFiles = ['index.html', '404.html'];
 
-          for (const fp of HTMLS) {
-            let html = fs.readFileSync(fp,'utf8');
+          for (const file of htmlFiles) {
+            const fp = path.join(dist, file);
+            if (!fs.existsSync(fp)) continue;
 
-            // nuke service worker references
-            html = html.replace(/<script[^>]*register-service-worker[^>]*><\/script>/g, '');
-            html = html.replace(/<link[^>]*rel=["']manifest["'][^>]*>/g, '');
+            let html = fs.readFileSync(fp, 'utf8');
 
-            // inject no-cache meta
-            if (!/Cache-Control/.test(html)) {
-              html = html.replace('<head>', `<head>
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-  <meta http-equiv="Pragma" content="no-cache" />
-  <meta http-equiv="Expires" content="0" />`);
+            // Base tag for GH Pages subpath
+            if (!html.includes('<base href="/sprout/">')) {
+              html = html.replace('<head>', `<head><base href="/sprout/">`);
             }
 
-            // ensure base for subpath
-            if (!/<base\s+href=/.test(html)) {
-              html = html.replace('<head>', '<head>\n  <base href="/sprout/">');
-            }
+            // Cache bust meta
+            html = html.replace('<head>', `<head>
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+<meta http-equiv="Pragma" content="no-cache" />
+<meta http-equiv="Expires" content="0" />`);
 
-            // fix any absolute paths missing /sprout
-            html = html.replace(/"\/*_expo\//g, '"/sprout/_expo/');
-            html = html.replace(/href="\/favicon\.ico"/g, 'href="/sprout/favicon.ico"');
-            html = html.replace(/href="\/assets\//g, 'href="/sprout/assets/');
+            // Rewrite _expo paths
+            html = html.replace(/"\/_expo\//g, '"/sprout/_expo/');
 
-            // rewrite any root index-*.js to the real hashed file with cache-buster
-            if (hashedIndex) {
-              const bust = process.env.GITHUB_SHA || Date.now().toString();
-              const target = `/sprout/_expo/static/js/web/${hashedIndex}?v=${bust}`;
-              html = html.replace(/src="\/?index-[^"]+\.js"/g, `src="${target}"`);
-              html = html.replace(/href="\/?index-[^"]+\.js"/g, `href="${target}"`);
+            // Point to the hashed bundle and add cache-busting
+            if (hashed) {
+              const newPath = `/sprout/_expo/static/js/web/${hashed}?v=${process.env.GITHUB_SHA}`;
+              html = html.replace(/src="[^"]*index-.*\.js[^"]*"/, `src="${newPath}"`);
             }
 
             fs.writeFileSync(fp, html, 'utf8');
-            console.log('Patched', fp);
+            console.log(`Patched: ${file}`);
           }
-
-          // ensure favicon exists
-          const ico = path.join(DIST,'favicon.ico');
-          const png = path.join(DIST,'assets','icon.png');
-          if (!fs.existsSync(ico) && fs.existsSync(png)) fs.copyFileSync(png, ico);
           NODE
 
-      - name: Upload Pages artifact
+      - name: Upload static artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: app/dist
